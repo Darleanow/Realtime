@@ -8,7 +8,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
+FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
+if not FINNHUB_API_KEY:
+    raise RuntimeError("Missing FINNHUB_API_KEY !")
 
 finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
 
