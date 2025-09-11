@@ -4,13 +4,14 @@ import time
 import random
 import finnhub
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
 if not FINNHUB_API_KEY:
-    raise RuntimeError("Missing FINNHUB_API_KEY !")
+    raise RuntimeError("Missing FINNHUB_API_KEY!")
 
 finnhub_client = finnhub.Client(api_key=FINNHUB_API_KEY)
 
@@ -26,7 +27,6 @@ stock_prices = {
 
 
 def generate_stock_update():
-    """Generates a random change of a stock price."""
     symbol = random.choice(list(stock_prices.keys()))
     current_price = stock_prices[symbol]
 
@@ -35,21 +35,20 @@ def generate_stock_update():
 
     stock_prices[symbol] = new_price
 
-    change_percent = round(change_percent * 100, 3)
-
     return {
         "symbol": symbol,
         "price": new_price,
         "change": round(new_price - current_price, 2),
-        "change_percent": change_percent,
+        "change_percent": round(change_percent * 100, 3),
     }
 
 
-def generate_market_update():
-    """Queries finnhub api to get last hour news."""
-    market_news = finnhub_client.general_news("general", min_id=60)
-
-    return market_news
+def get_latest_news(limit=5):
+    try:
+        news = finnhub_client.general_news("general")
+        return news[:limit]
+    except Exception as e:
+        return [{"headline": "Error fetching news", "summary": str(e)}]
 
 
 @app.route("/")
@@ -66,6 +65,7 @@ def stream_market_data():
             stock_data = generate_stock_update()
             yield f"id: {update_id}\ndata: {json.dumps(stock_data)}\n\n"
 
+            yield ": keepalive\n\n"
             time.sleep(2)
 
     last_id = request.headers.get("Last-Event-ID")
@@ -77,10 +77,7 @@ def stream_market_data():
     return Response(
         event_stream(last_id),
         mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
@@ -90,10 +87,10 @@ def stream_market_news():
         update_id = last_id
         while True:
             update_id += 1
-            news_list = generate_market_update()
-            for news in news_list[:3]:
+            for news in get_latest_news(3):
                 yield f"id: {update_id}\ndata: {json.dumps(news)}\n\n"
-                time.sleep(5)
+            yield ": keepalive\n\n"
+            time.sleep(20)
 
     last_id = request.headers.get("Last-Event-ID")
     try:
@@ -104,10 +101,7 @@ def stream_market_news():
     return Response(
         event_stream(last_id),
         mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
