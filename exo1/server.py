@@ -85,12 +85,18 @@ def stream_market_data():
 def stream_market_news():
     def event_stream(last_id):
         update_id = last_id
-        while True:
+
+        for news in get_latest_news(3):
             update_id += 1
+            yield f"id: {update_id}\ndata: {json.dumps(news)}\n\n"
+
+        while True:
             for news in get_latest_news(3):
+                update_id += 1
                 yield f"id: {update_id}\ndata: {json.dumps(news)}\n\n"
+
             yield ": keepalive\n\n"
-            time.sleep(20)
+            time.sleep(30)
 
     last_id = request.headers.get("Last-Event-ID")
     try:
