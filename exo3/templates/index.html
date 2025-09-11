@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="fr">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Chat Temps Réel – Flask-SocketIO</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col">
+
+  <!-- HEADER -->
+  <header class="border-b border-gray-800 p-4 flex justify-between items-center">
+    <h1 class="text-xl font-bold text-emerald-500">💬 Chat Temps Réel</h1>
+    <div class="flex gap-4 items-center">
+      <span id="online" class="text-sm text-gray-400">0 en ligne</span>
+      <button id="changeName" class="text-sm text-emerald-400 hover:text-emerald-300">Changer de pseudo</button>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main class="flex-1 mx-auto max-w-4xl w-full grid gap-6 p-6 md:grid-cols-[1fr,250px]">
+    <!-- Zone Chat -->
+    <section class="bg-gray-900 border border-gray-800 rounded-xl flex flex-col h-[70vh]">
+      <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+      <form id="form" class="border-t border-gray-800 p-3 flex gap-2">
+        <input id="input"
+          class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          placeholder="Écris un message…" autocomplete="off" />
+        <button class="bg-emerald-600 hover:bg-emerald-500 text-black font-medium px-4 py-2 rounded-lg">Envoyer</button>
+      </form>
+    </section>
+
+    <!-- Sidebar -->
+    <aside class="space-y-4">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+        <h2 class="text-sm font-semibold text-gray-300 mb-2">Participants</h2>
+        <ul id="users" class="text-sm text-gray-300 space-y-1"></ul>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-xs text-gray-400">
+        Pseudo : <span id="me" class="text-gray-200">—</span><br>
+        Serveur : <span id="status" class="text-emerald-400">connecté</span>
+      </div>
+    </aside>
+  </main>
+
+  <!-- MODAL PSEUDO -->
+  <div id="modal" class="fixed inset-0 hidden items-center justify-center bg-black/60">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-[92vw] max-w-md">
+      <h3 class="text-lg font-semibold mb-3">Choisis un pseudo</h3>
+      <form id="nameForm" class="flex gap-2">
+        <input id="nameInput"
+          class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          placeholder="ex: Damien" />
+        <button class="bg-emerald-600 hover:bg-emerald-500 text-black font-medium px-4 py-2 rounded-lg">OK</button>
+      </form>
+      <p class="text-xs text-gray-500 mt-2">Ton pseudo sera sauvegardé sur cet appareil.</p>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const messages = $("messages"), users = $("users"), me = $("me"), online = $("online"), statusEl = $("status");
+    const modal = $("modal"), nameForm = $("nameForm"), nameInput = $("nameInput"), changeName = $("changeName");
+    const form = $("form"), input = $("input");
+
+    const socket = io("http://127.0.0.1:5000", {transports: ["websocket"]});
+
+    function tsToLocale(ts) {
+      try {return new Date(ts).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});}
+      catch {return "";}
+    }
+
+    function appendSystem(text, ts) {
+      const div = document.createElement("div");
+      div.className = "text-xs text-gray-500 text-center";
+      div.textContent = `[${tsToLocale(ts)}] ${text}`;
+      messages.append(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function appendMessage(user, text, ts) {
+      const row = document.createElement("div");
+      row.className = "flex gap-2 items-start";
+
+      const avatar = document.createElement("div");
+      avatar.className = "w-8 h-8 rounded-full bg-emerald-600 text-black grid place-content-center text-sm font-bold";
+      avatar.textContent = user.trim().charAt(0).toUpperCase();
+
+      const bubble = document.createElement("div");
+      bubble.className = "bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 max-w-[80%]";
+      bubble.innerHTML = `<div class="text-xs text-gray-400 mb-1">${user} • ${tsToLocale(ts)}</div><div class="text-sm">${text}</div>`;
+
+      row.append(avatar, bubble);
+      messages.append(row);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function renderUsers(list) {
+      users.innerHTML = "";
+      list.forEach(u => {
+        const li = document.createElement("li");
+        li.className = "flex items-center gap-2";
+        li.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span><span>${u}</span>`;
+        users.append(li);
+      });
+    }
+
+    function ensureName() {
+      let n = localStorage.getItem("chat_name") || "";
+      if (!n) {
+        modal.classList.remove("hidden");
+        nameInput.focus();
+      } else {
+        me.textContent = n;
+        socket.emit("set_username", {username: n});
+      }
+    }
+
+    socket.on("connect", () => {
+      statusEl.textContent = "connecté";
+      statusEl.className = "text-emerald-400";
+      ensureName();
+    });
+
+    socket.on("disconnect", () => {
+      statusEl.textContent = "déconnecté";
+      statusEl.className = "text-red-400";
+    });
+
+    socket.on("presence", p => {
+      online.textContent = `${p.online} en ligne`;
+      renderUsers(p.users || []);
+    });
+
+    socket.on("system", s => appendSystem(s.text, s.ts));
+    socket.on("message", m => appendMessage(m.user, m.text, m.ts));
+
+    socket.on("private", p => {
+      const row = document.createElement("div");
+      row.className = "flex gap-2 items-start";
+
+      const avatar = document.createElement("div");
+      avatar.className = "w-8 h-8 rounded-full bg-pink-500 text-black grid place-content-center text-sm font-bold";
+      avatar.textContent = p.from.trim().charAt(0).toUpperCase();
+
+      const bubble = document.createElement("div");
+      bubble.className = "bg-gray-800 border border-pink-500 rounded-lg px-3 py-2 max-w-[80%]";
+
+      const head = document.createElement("div");
+      head.className = "text-xs text-pink-400 mb-1";
+      if (p.to === me.textContent) {
+        head.textContent = `[Privé de ${p.from}] • ${tsToLocale(p.ts)}`;
+      } else {
+        head.textContent = `[Privé à ${p.to}] • ${tsToLocale(p.ts)}`;
+      }
+
+      const body = document.createElement("div");
+      body.className = "text-sm";
+      body.textContent = p.text;
+
+      bubble.append(head, body);
+      row.append(avatar, bubble);
+      messages.append(row);
+      messages.scrollTop = messages.scrollHeight;
+    });
+
+
+    nameForm.addEventListener("submit", e => {
+      e.preventDefault();
+      const n = nameInput.value.trim();
+      if (!n) return;
+      localStorage.setItem("chat_name", n);
+      me.textContent = n;
+      socket.emit("set_username", {username: n});
+      modal.classList.add("hidden");
+    });
+
+    changeName.addEventListener("click", () => {
+      modal.classList.remove("hidden");
+      nameInput.value = localStorage.getItem("chat_name") || "";
+      nameInput.focus();
+    });
+
+    form.addEventListener("submit", e => {
+      e.preventDefault();
+      const txt = input.value.trim();
+      if (!txt) return;
+      socket.emit("send_message", {text: txt});
+      input.value = "";
+    });
+  </script>
+</body>
+
+</html>
