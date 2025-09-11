@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Boursier</title>
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --fg: #e5e5e5;
+      --muted: #8a8a8a;
+      --card: #15191f;
+      --border: #222831;
+      --accent: #00ff88;
+      --accent-soft: #00cc6a;
+      --red: #ff4d4d;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+    }
+
+    header {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    section {
+      padding: 1.5rem;
+    }
+
+    section h2 {
+      font-size: 0.95rem;
+      margin-bottom: 1rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .filters {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .filters input {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.4rem 0.6rem;
+      color: var(--fg);
+    }
+
+    .filters button {
+      background: var(--accent);
+      border: none;
+      border-radius: 4px;
+      padding: 0.4rem 0.8rem;
+      color: #000;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .filters button:hover {
+      background: var(--accent-soft);
+    }
+
+    .stock-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.9rem;
+    }
+
+    .stock-table th,
+    .stock-table td {
+      padding: 0.6rem 0.8rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    .stock-table th {
+      text-align: left;
+      font-weight: 500;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .price-up {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .price-down {
+      color: var(--red);
+      font-weight: 600;
+    }
+
+    .price-unchanged {
+      color: var(--muted);
+    }
+
+    canvas.spark {
+      display: block;
+      width: 80px;
+      height: 30px;
+    }
+
+    #stock-news {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+    }
+
+    .news-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .news-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+
+    .news-card h3 {
+      margin: 0 0 0.5rem;
+      font-size: 1rem;
+      color: var(--accent);
+      line-height: 1.4;
+    }
+
+    .news-card img {
+      width: 100%;
+      border-radius: 6px;
+      margin: 0.5rem 0;
+      object-fit: cover;
+      max-height: 160px;
+    }
+
+    .news-card p {
+      margin: 0.3rem 0;
+      font-size: 0.9rem;
+      color: var(--fg);
+    }
+
+    .news-card a {
+      margin-top: auto;
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+
+    .news-card a:hover {
+      color: var(--accent-soft);
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Dashboard Boursier</h1>
+  </header>
+
+  <section>
+    <h2>Cotations</h2>
+    <div class="filters">
+      <input type="text" id="symbolFilter" placeholder="Symbole (ex: AAPL)">
+      <input type="number" id="priceFilter" placeholder="Prix min (€)">
+      <button onclick="applyFilters()">Filtrer</button>
+      <button onclick="resetFilters()">Réinitialiser</button>
+    </div>
+    <table class="stock-table" id="stock-quotes">
+      <thead>
+        <tr>
+          <th>Symbole</th>
+          <th>Prix</th>
+          <th>Changement</th>
+          <th>Variation (%)</th>
+          <th>Historique</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Actualités</h2>
+    <div id="stock-news"></div>
+  </section>
+
+  <script>
+    const eventSourceMarketData = new EventSource('/market_updates');
+    const eventSourceMarketNews = new EventSource('/market_news');
+
+    const stockTableBody = document.querySelector('#stock-quotes tbody');
+    const stockNewsDiv = document.getElementById('stock-news');
+
+    const stockElements = {};
+    const priceHistory = {};
+    const seenHeadlines = new Set();
+
+    let filters = {symbol: "", minPrice: null};
+
+    function applyFilters() {
+      filters.symbol = document.getElementById("symbolFilter").value.trim().toUpperCase();
+      const priceVal = document.getElementById("priceFilter").value;
+      filters.minPrice = priceVal ? parseFloat(priceVal) : null;
+      for (const row of stockTableBody.rows) {
+        const symbol = row.querySelector(".symbol").textContent;
+        const price = parseFloat(row.querySelector(".price").textContent);
+        row.style.display =
+          (filters.symbol && symbol !== filters.symbol) ||
+            (filters.minPrice !== null && price < filters.minPrice)
+            ? "none" : "";
+      }
+    }
+    function resetFilters() {
+      document.getElementById("symbolFilter").value = "";
+      document.getElementById("priceFilter").value = "";
+      filters = {symbol: "", minPrice: null};
+      for (const row of stockTableBody.rows) row.style.display = "";
+    }
+
+    function drawSparkline(canvas, history) {
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      if (history.length < 2) return;
+      const min = Math.min(...history);
+      const max = Math.max(...history);
+      ctx.beginPath();
+      ctx.strokeStyle = "#00ff88";
+      ctx.lineWidth = 1.5;
+      history.forEach((p, i) => {
+        const x = (i / (history.length - 1)) * (w - 2) + 1;
+        const y = h - ((p - min) / (max - min || 1)) * (h - 2) - 1;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    eventSourceMarketData.onmessage = e => {
+      const data = JSON.parse(e.data);
+      if (!(data.symbol && data.price !== undefined)) return;
+      const {symbol, price, change, change_percent} = data;
+      let row = stockElements[symbol];
+
+      if (!row) {
+        row = document.createElement('tr');
+        row.innerHTML = `
+          <td class="symbol">${symbol}</td>
+          <td class="price"></td>
+          <td class="change"></td>
+          <td class="change_percent"></td>
+          <td><canvas class="spark" width="80" height="30"></canvas></td>
+        `;
+        stockTableBody.appendChild(row);
+        stockElements[symbol] = row;
+        priceHistory[symbol] = [];
+      }
+
+      const history = priceHistory[symbol];
+      history.push(price);
+      if (history.length > 10) history.shift();
+
+      row.querySelector('.price').textContent = `${price} €`;
+      row.querySelector('.change').textContent = `${change} €`;
+      row.querySelector('.change_percent').textContent = `${change_percent.toFixed(2)} %`;
+
+      const changeCell = row.querySelector('.change');
+      const percentCell = row.querySelector('.change_percent');
+      changeCell.className = 'change';
+      percentCell.className = 'change_percent';
+
+      if (change > 0) changeCell.classList.add('price-up');
+      else if (change < 0) changeCell.classList.add('price-down');
+      else changeCell.classList.add('price-unchanged');
+
+      if (change_percent > 0) percentCell.classList.add('price-up');
+      else if (change_percent < 0) percentCell.classList.add('price-down');
+      else percentCell.classList.add('price-unchanged');
+
+      drawSparkline(row.querySelector('.spark'), history);
+
+      const hide =
+        (filters.symbol && symbol !== filters.symbol) ||
+        (filters.minPrice !== null && price < filters.minPrice);
+      row.style.display = hide ? "none" : "";
+    };
+
+    eventSourceMarketNews.onmessage = e => {
+      const data = JSON.parse(e.data);
+      if (!(data.headline && data.url)) return;
+      if (seenHeadlines.has(data.headline)) return;
+      seenHeadlines.add(data.headline);
+
+      const card = document.createElement('div');
+      card.className = 'news-card';
+      card.innerHTML = `
+        <h3>${data.headline}</h3>
+        <p><em>${data.source}</em> - ${new Date(data.datetime * 1000).toLocaleString()}</p>
+        ${data.image ? `<img src="${data.image}" alt="news image"/>` : ""}
+        <p>${data.summary}</p>
+        <a href="${data.url}" target="_blank">Lire l'article</a>
+      `;
+      stockNewsDiv.prepend(card);
+      const allNews = stockNewsDiv.getElementsByClassName('news-card');
+      if (allNews.length > 10) stockNewsDiv.removeChild(allNews[allNews.length - 1]);
+    };
+  </script>
+</body>
+
+</html>
