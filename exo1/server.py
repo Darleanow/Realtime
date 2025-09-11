@@ -66,7 +66,7 @@ def stream_market_data():
             yield f"id: {update_id}\ndata: {json.dumps(stock_data)}\n\n"
 
             yield ": keepalive\n\n"
-            time.sleep(2)
+            time.sleep(1)
 
     last_id = request.headers.get("Last-Event-ID")
     try:
