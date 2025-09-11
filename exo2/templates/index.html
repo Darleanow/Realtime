@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Long Polling – Dashboard Dark</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+  <!-- HEADER -->
+  <header class="p-6 border-b border-gray-800 flex items-center justify-between">
+    <h1 class="text-2xl font-bold tracking-tight text-emerald-500">
+      Dashboard Tâches
+    </h1>
+    <span class="text-sm text-gray-400">Long Polling Demo</span>
+  </header>
+
+  <!-- LAYOUT -->
+  <div class="mx-auto max-w-6xl p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+    <!-- Sidebar -->
+    <aside class="md:col-span-1 space-y-4">
+      <!-- Tâches -->
+      <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold text-gray-200">Tâches</h2>
+          <button id="refreshTasks" class="text-sm text-emerald-500 hover:text-emerald-400">
+            ↻
+          </button>
+        </div>
+        <ul id="taskList" class="space-y-2 text-sm"></ul>
+      </div>
+
+      <!-- Nouvelle tâche -->
+      <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+        <h2 class="font-semibold text-gray-200 mb-3">Nouvelle tâche</h2>
+        <div class="flex gap-2">
+          <input id="newTaskName"
+            class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="Nom de la tâche" />
+          <button id="createTask" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg">
+            Créer
+          </button>
+        </div>
+        <p id="createHint" class="text-xs text-gray-500 mt-2"></p>
+      </div>
+
+      <!-- Admin -->
+      <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+        <h2 class="font-semibold text-gray-200 mb-3">Admin</h2>
+        <input id="token"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-500 mb-2"
+          placeholder="Token (Bearer)" />
+        <div class="text-xs text-gray-500">Default: <code>secret</code></div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="md:col-span-2 space-y-6">
+      <!-- Statut courant -->
+      <section class="bg-gray-900 rounded-xl p-6 border border-gray-800 text-center">
+        <p class="text-gray-400">Statut actuel</p>
+        <p id="status" class="text-4xl font-bold text-emerald-500 my-2">—</p>
+        <p class="text-xs text-gray-500">
+          Version <span id="version">—</span> · <span id="updatedAt">—</span>
+        </p>
+      </section>
+
+      <!-- Update statut -->
+      <section class="bg-gray-900 rounded-xl p-6 border border-gray-800">
+        <h2 class="text-lg font-semibold text-gray-200 mb-4">
+          Mettre à jour
+        </h2>
+        <div class="flex flex-col sm:flex-row gap-3">
+          <select id="preset"
+            class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <option>En attente</option>
+            <option>En cours</option>
+            <option>Terminée</option>
+            <option>Échec</option>
+          </select>
+          <input id="custom"
+            class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="ou personnalisé…" />
+          <button id="send" class="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg">
+            OK
+          </button>
+        </div>
+        <p id="updateHint" class="text-xs text-gray-500 mt-2"></p>
+      </section>
+
+      <!-- Historique -->
+      <section class="bg-gray-900 rounded-xl p-6 border border-gray-800">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold text-gray-200">Historique</h2>
+          <button id="refreshHistory" class="text-sm text-emerald-500 hover:text-emerald-400">
+            ↻
+          </button>
+        </div>
+        <ul id="history" class="space-y-2 text-sm text-gray-300">
+          <li class="italic text-gray-600">Aucun élément</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast"
+    class="pointer-events-none fixed bottom-4 right-4 hidden bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm shadow-lg">
+  </div>
+
+  <script>
+    const API = "http://127.0.0.1:5000";
+    const el = (id) => document.getElementById(id);
+    const $taskList = el("taskList"),
+      $taskTitle = el("taskTitle"),
+      $status = el("status"),
+      $version = el("version"),
+      $updatedAt = el("updatedAt");
+    const $refreshTasks = el("refreshTasks"),
+      $newTaskName = el("newTaskName"),
+      $createTask = el("createTask"),
+      $createHint = el("createHint");
+    const $preset = el("preset"),
+      $custom = el("custom"),
+      $send = el("send"),
+      $updateHint = el("updateHint");
+    const $history = el("history"),
+      $refreshHistory = el("refreshHistory"),
+      $token = el("token"),
+      $toast = el("toast");
+
+    let tasks = [],
+      currentTaskId = null,
+      knownVersion = -1,
+      backoff = 500;
+
+    function toast(msg) {
+      $toast.textContent = msg;
+      $toast.classList.remove("hidden");
+      setTimeout(() => {
+        $toast.classList.add("hidden");
+      }, 1500);
+    }
+
+    async function fetchJSON(url, opts = {}) {
+      const res = await fetch(url, opts);
+      if (!res.ok && res.status !== 204) {
+        let err = "HTTP " + res.status;
+        try {
+          const d = await res.json();
+          if (d.error) err = d.error;
+        } catch { }
+        throw new Error(err);
+      }
+      if (res.status === 204) return null;
+      return res.json();
+    }
+
+    function renderTasks() {
+      $taskList.innerHTML = "";
+      tasks.forEach((t) => {
+        const li = document.createElement("li");
+        li.className =
+          "flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2";
+        li.innerHTML = `<span class="font-medium">${t.name
+          }</span><span class="text-xs text-gray-500">v${t.version ?? 0} · ${t.status ?? "—"
+          }</span>`;
+        li.onclick = () => selectTask(t.id);
+        if (currentTaskId === t.id) {
+          li.classList.add("border", "border-emerald-500");
+        }
+        $taskList.append(li);
+      });
+    }
+
+    async function loadTasks() {
+      tasks = await fetchJSON(`${API}/tasks`);
+      if (!currentTaskId && tasks.length) selectTask(tasks[0].id, false);
+      renderTasks();
+    }
+    async function createTask() {
+      const name = $newTaskName.value.trim();
+      if (!name) return;
+      $createHint.textContent = "Création…";
+      try {
+        await fetchJSON(`${API}/tasks`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({name}),
+        });
+        $newTaskName.value = "";
+        $createHint.textContent = "OK";
+        await loadTasks();
+      } catch (e) {
+        $createHint.textContent = e.message;
+      }
+    }
+
+    function setUIState(v) {
+      $version.textContent = String(v.version);
+      $status.textContent = v.value;
+      $updatedAt.textContent = v.updated_at
+        ? new Date(v.updated_at + "Z").toLocaleString()
+        : "—";
+      knownVersion = v.version;
+    }
+
+    async function selectTask(id, resetPoll = true) {
+      currentTaskId = id;
+      const init = await fetchJSON(
+        `${API}/tasks/${id}/status?last_version=-1`
+      );
+      if (init) setUIState(init);
+      renderTasks();
+      if (resetPoll) {
+        knownVersion = init ? init.version : -1;
+        poll();
+        loadHistory();
+      }
+    }
+
+    async function loadHistory() {
+      const data = await fetchJSON(
+        `${API}/tasks/${currentTaskId}/history?limit=50`
+      );
+      $history.innerHTML = "";
+      if (!data.length) {
+        $history.innerHTML = `<li class="italic text-gray-600">Aucun élément</li>`;
+        return;
+      }
+      data.forEach((h) => {
+        const li = document.createElement("li");
+        li.className =
+          "flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2";
+        li.innerHTML = `<span>${h.value
+          }</span><span class="text-xs text-gray-500">v${h.version
+          } · ${new Date(h.created_at + "Z").toLocaleString()}</span>`;
+        $history.append(li);
+      });
+    }
+
+    async function poll() {
+      if (!currentTaskId) return;
+      try {
+        const res = await fetch(
+          `${API}/tasks/${currentTaskId}/status?last_version=${knownVersion}`
+        );
+        if (res.status === 200) {
+          const data = await res.json();
+          setUIState(data);
+          backoff = 500;
+          loadTasks();
+          loadHistory();
+        } else if (res.status !== 204) {
+          let msg = "HTTP " + res.status;
+          try {
+            const d = await res.json();
+            if (d.error) msg = d.error;
+          } catch { }
+          throw new Error(msg);
+        }
+      } catch (e) {
+        await new Promise((r) => setTimeout(r, backoff));
+        backoff = Math.min(backoff * 2, 8000);
+      } finally {
+        poll();
+      }
+    }
+
+    async function updateStatus() {
+      if (!currentTaskId) return;
+      const val = ($custom.value || $preset.value).trim();
+      if (!val) return;
+      $updateHint.textContent = "Envoi…";
+      try {
+        const token =
+          $token.value.trim() || localStorage.getItem("lp_token") || "";
+        const headers = {"Content-Type": "application/json"};
+        if (token) headers["Authorization"] = "Bearer " + token;
+        const data = await fetchJSON(`${API}/tasks/${currentTaskId}/status`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({status: val}),
+        });
+        setUIState(data);
+        $updateHint.textContent = "OK";
+        $custom.value = "";
+        toast("Statut mis à jour");
+      } catch (e) {
+        $updateHint.textContent = e.message;
+        toast(e.message);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      const saved = localStorage.getItem("lp_token");
+      if (saved) $token.value = saved;
+      await loadTasks();
+      $refreshTasks.onclick = loadTasks;
+      $createTask.onclick = createTask;
+      $send.onclick = updateStatus;
+      $refreshHistory.onclick = loadHistory;
+      $token.addEventListener("change", () => {
+        localStorage.setItem("lp_token", $token.value.trim());
+        toast("🔑 Token enregistré");
+      });
+    });
+  </script>
+</body>
+
+</html>
