@@ -1,31 +1,80 @@
+version: '3.8'
+
 services:
+  # ============================================
+  # REDIS
+  # ============================================
   redis:
-    image: redis:latest
+    image: redis:7-alpine
     container_name: collabboard-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-myredispassword}"]
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-  # app:
-  #   image: node:24.10
-  #   working_dir: /usr/src/app
-  #   restart: unless-stopped
-  #   volumes:
-  #     - .:/usr/src/app
-  #   command: ["node", "server/index-redis.js"]
-  #   environment:
-  #     - PORT=3000
-  #     - REDIS_HOST=redis
-  #     - REDIS_PORT=6379
-  #     # - REDIS_PASSWORD=mysecretpassword
-  #     - INSTANCE_ID=${HOSTNAME}
+    networks:
+      - collabboard
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
-  #   ports:
-  #     - "3000-3010:3000"
-  #   depends_on:
-  #     - redis
+  # ============================================
+  # SERVER (Backend Socket.IO)
+  # ============================================
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: collabboard-server
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - CLIENT_URL=${CLIENT_URL:-http://localhost:3000}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-myredispassword}
+      - INSTANCE_ID=${HOSTNAME:-server-1}
+    ports:
+      - "3001:3001"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - collabboard
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # CLIENT (Next.js Frontend)
+  # ============================================
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://localhost:3001}
+    container_name: collabboard-client
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - server
+    networks:
+      - collabboard
+
+networks:
+  collabboard:
+    driver: bridge
 
 volumes:
   redis_data:
+    driver: local
