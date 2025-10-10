@@ -39,12 +39,12 @@ export default function BoardPage({ params }: PageProps) {
         try {
             setConfig(JSON.parse(storedConfig));
         } catch (error) {
-            toast.error("Configuration invalide");
+            toast.error("Configuration invalide: " + error);
             setTimeout(() => router.push("/"), 2000);
         }
     }, [router]);
 
-    const { socket, isConnected, error, users } = useSocket({
+    const { socket, isConnected, users } = useSocket({
         pseudo: config?.pseudo || "",
         roomId: roomId || "",
         token: config?.token || "",
@@ -63,14 +63,11 @@ export default function BoardPage({ params }: PageProps) {
         };
 
         socket.on("notification", handleNotification);
-        return () => socket.off("notification", handleNotification);
+        
+        return () => {
+            socket.off("notification", handleNotification);
+        };
     }, [socket, config]);
-
-    useEffect(() => {
-        if (error) {
-            toast.error(`Erreur: ${error}`);
-        }
-    }, [error]);
 
     if (!config || !roomId) {
         return (
@@ -121,8 +118,9 @@ export default function BoardPage({ params }: PageProps) {
 
             {/* Connection status mobile */}
             <div className="fixed bottom-4 right-4 z-30 sm:hidden">
-                <div className={`w-3 h-3 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"
-                    } animate-pulse`} />
+                <div className={`w-3 h-3 rounded-full ${
+                    isConnected ? "bg-green-500" : "bg-red-500"
+                } animate-pulse`} />
             </div>
         </div>
     );
