@@ -1,0 +1,37 @@
+{
+    "name": "collabboard-server",
+    "version": "1.0.0",
+    "description": "Socket.IO server for CollabBoard - Real-time collaborative whiteboard with Redis support",
+    "main": "src/index.js",
+    "scripts": {
+        "start": "node src/index.js",
+        "dev": "nodemon src/index.js",
+        "test": "echo \"No tests yet\" && exit 0",
+        "lint": "eslint src/**/*.js"
+    },
+    "keywords": [
+        "socket.io",
+        "collaborative",
+        "whiteboard",
+        "real-time",
+        "redis"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "express": "^4.18.2",
+        "socket.io": "^4.6.1",
+        "@socket.io/redis-adapter": "^8.2.1",
+        "redis": "^4.6.7",
+        "cors": "^2.8.5",
+        "dotenv": "^16.3.1"
+    },
+    "devDependencies": {
+        "nodemon": "^3.0.1",
+        "eslint": "^8.50.0"
+    },
+    "engines": {
+        "node": ">=16.0.0",
+        "npm": ">=8.0.0"
+    }
+}
