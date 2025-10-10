@@ -1,9 +1,10 @@
 "use client";
 
-import { Pencil, Eraser, Trash2, Undo2 } from "lucide-react";
+import { Pencil, Eraser, Trash2, Undo2, Palette, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Socket } from "socket.io-client";
+import { useState } from "react";
 
 interface ToolbarProps {
     socket: Socket | null;
@@ -17,15 +18,8 @@ interface ToolbarProps {
 }
 
 const COLORS = [
-    "#ffffff", // Blanc
-    "#ef4444", // Rouge
-    "#f97316", // Orange
-    "#eab308", // Jaune
-    "#22c55e", // Vert
-    "#3b82f6", // Bleu
-    "#a855f7", // Violet
-    "#ec4899", // Rose
-    "#64748b", // Gris
+    "#ffffff", "#ef4444", "#f97316", "#eab308",
+    "#22c55e", "#06b6d4", "#3b82f6", "#a855f7", "#ec4899"
 ];
 
 export default function Toolbar({
@@ -38,10 +32,11 @@ export default function Toolbar({
     tool,
     setTool,
 }: ToolbarProps) {
+    const [isExpanded, setIsExpanded] = useState(true);
+
     const handleClear = () => {
         if (!socket || !isConnected) return;
-
-        if (confirm("Effacer tout le tableau ? Cette action est irréversible.")) {
+        if (confirm("Effacer tout le tableau ?")) {
             socket.emit("clear-canvas");
         }
     };
@@ -51,22 +46,40 @@ export default function Toolbar({
         socket.emit("undo");
     };
 
+    // Compact mode mobile
+    if (!isExpanded) {
+        return (
+            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+                <Button
+                    onClick={() => setIsExpanded(true)}
+                    variant="outline"
+                    className="gap-2"
+                >
+                    <Palette className="w-4 h-4" />
+                    <span className="text-sm">Outils</span>
+                    <ChevronDown className="w-4 h-4" />
+                </Button>
+            </div>
+        );
+    }
+
     return (
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-10">
-            <div className="bg-zinc-900/90 backdrop-blur border border-zinc-800 rounded-lg shadow-xl p-4">
-                <div className="flex items-center gap-6">
-                    {/* Outils */}
-                    <div className="flex items-center gap-2">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[95vw] max-w-4xl">
+            <div className="bg-background/95 backdrop-blur border rounded-lg p-3 shadow-lg">
+                {/* Mobile: Stack vertically, Desktop: Horizontal */}
+                <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
+
+                    {/* Tools */}
+                    <div className="flex items-center gap-2 justify-center lg:justify-start">
                         <Button
-                            variant={tool === "pen" ? "default" : "ghost"}
+                            variant={tool === "pen" ? "default" : "outline"}
                             size="icon"
                             onClick={() => setTool("pen")}
-                            className="relative"
                         >
                             <Pencil className="w-4 h-4" />
                         </Button>
                         <Button
-                            variant={tool === "eraser" ? "default" : "ghost"}
+                            variant={tool === "eraser" ? "destructive" : "outline"}
                             size="icon"
                             onClick={() => setTool("eraser")}
                         >
@@ -74,76 +87,66 @@ export default function Toolbar({
                         </Button>
                     </div>
 
-                    {/* Séparateur */}
-                    <div className="h-8 w-px bg-zinc-700" />
-
-                    {/* Palette de couleurs */}
-                    <div className="flex items-center gap-2">
+                    {/* Colors */}
+                    <div className="flex items-center gap-2 justify-center flex-wrap">
                         {COLORS.map((c) => (
                             <button
                                 key={c}
                                 onClick={() => setColor(c)}
-                                className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 ${color === c
-                                        ? "border-white shadow-lg scale-110"
-                                        : "border-zinc-700 hover:border-zinc-600"
+                                className={`w-8 h-8 rounded-md border-2 transition-transform hover:scale-110 ${color === c ? "border-primary scale-110 ring-2 ring-primary/20" : "border-input"
                                     }`}
                                 style={{ backgroundColor: c }}
-                                title={c}
                             />
                         ))}
                     </div>
 
-                    {/* Séparateur */}
-                    <div className="h-8 w-px bg-zinc-700" />
-
-                    {/* Épaisseur */}
-                    <div className="flex items-center gap-3 min-w-[140px]">
-                        <span className="text-xs text-zinc-400 whitespace-nowrap">
+                    {/* Line Width */}
+                    <div className="flex items-center gap-3 px-2">
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">
                             {lineWidth}px
                         </span>
                         <Slider
                             value={[lineWidth]}
-                            onValueChange={(value) => setLineWidth(value[0])}
+                            onValueChange={(v) => setLineWidth(v[0])}
                             min={1}
-                            max={20}
-                            step={1}
-                            className="w-20"
+                            max={30}
+                            className="w-24 lg:w-32"
                         />
                     </div>
 
-                    {/* Séparateur */}
-                    <div className="h-8 w-px bg-zinc-700" />
-
                     {/* Actions */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 justify-center lg:justify-end lg:ml-auto">
                         <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={handleUndo}
                             disabled={!isConnected}
-                            title="Annuler"
                         >
                             <Undo2 className="w-4 h-4" />
                         </Button>
                         <Button
-                            variant="ghost"
+                            variant="outline"
                             size="icon"
                             onClick={handleClear}
                             disabled={!isConnected}
-                            title="Tout effacer"
                         >
                             <Trash2 className="w-4 h-4" />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setIsExpanded(false)}
+                            className="lg:hidden"
+                        >
+                            <ChevronUp className="w-4 h-4" />
                         </Button>
                     </div>
                 </div>
 
-                {/* Indicateur de connexion */}
-                <div className="mt-3 flex items-center justify-center gap-2 text-xs">
-                    <div
-                        className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"
-                            }`}
-                    />
-                    <span className="text-zinc-400">
+                {/* Status */}
+                <div className="flex items-center justify-center gap-2 mt-3 pt-3 border-t">
+                    <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"} animate-pulse`} />
+                    <span className="text-xs text-muted-foreground">
                         {isConnected ? "Connecté" : "Déconnecté"}
                     </span>
                 </div>
