@@ -53,7 +53,48 @@ Le **Redis Adapter** connecte toutes les instances Socket.IO à un **canal de pu
 * Chaque instance **relaye** ensuite le message aux sockets locales concernées.
   Ainsi, tous les clients — peu importe le serveur sur lequel ils sont connectés — reçoivent le même message.
 
-[schema.mmd]
+```mermaid 
+graph TD
+    subgraph Clients
+        C1[Client A]
+        C2[Client B]
+        C3[Client C]
+    end
+
+    subgraph LoadBalancer
+        LB[Load Balancer]
+    end
+
+    subgraph Servers[Socket.IO Instances]
+        S1[Socket.IO Instance #1]
+        S2[Socket.IO Instance #2]
+        S3[Socket.IO Instance #3]
+    end
+
+    subgraph RedisCluster[Redis Pub/Sub]
+        R[(Redis Server)]
+    end
+
+    C1 --> LB
+    C2 --> LB
+    C3 --> LB
+
+    LB --> S1
+    LB --> S2
+    LB --> S3
+
+    S1 <--> R
+    S2 <--> R
+    S3 <--> R
+
+    S1 --- S2
+    S2 --- S3
+    S3 --- S1
+
+    R:::redisStyle
+
+    classDef redisStyle fill:#dc2626,color:#fff,stroke:#7f1d1d,stroke-width:2px;
+```
 
 Chaque serveur Node communique avec Redis pour propager les événements Socket.IO entre instances, assurant une **scalabilité horizontale** et une **synchronisation temps réel** globale.
 
